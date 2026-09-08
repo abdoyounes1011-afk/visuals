@@ -981,4 +981,10 @@ async function start() {
   });
 }
 
-start();
+// Export Express app for serverless deployments (Vercel, AWS Lambda, etc.)
+export default app;
+
+// Only start standalone HTTP listener when not running in serverless environment
+if (process.env.VERCEL !== "1" && !process.env.AWS_LAMBDA_FUNCTION_NAME) {
+  start();
+}

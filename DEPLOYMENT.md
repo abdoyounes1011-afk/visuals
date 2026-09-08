@@ -36,7 +36,20 @@
 
 ---
 
-### 2️⃣ التشغيل على أي خادم سحابي أو محلي (Node.js VPS / Ubuntu / Hostinger / إلخ)
+### 2️⃣ النشر على Vercel (معالجة خطأ 404 NOT_FOUND fra1)
+إذا قمت بربط المستودع بـ **Vercel** وظهر الخطأ:
+`The page could not be found NOT_FOUND fra1::...`
+
+**تم ضبط المشروع تلقائياً ليعمل بكفاءة 100% على Vercel:**
+1. تم إنشاء ملف `vercel.json` لتحديد مجلد المخرجات `dist` وتوجيه كافة المسارات تلقائياً لـ `index.html` (SPA Rewrites) لمنع حدوث 404 نهائياً.
+2. تم تجهيز ملف `/api/index.ts` لمعالجة مسارات الـ API كـ Serverless Functions على Vercel.
+3. كل ما عليك فعله في لوحة تحكم Vercel:
+   - إضافة مفتاح `GEMINI_API_KEY` داخل **Settings > Environment Variables**.
+   - الضغط على **Redeploy** (أو دفع تحديث جديد عبر Git).
+
+---
+
+### 3️⃣ التشغيل على أي خادم سحابي أو محلي (Node.js VPS / Ubuntu / Hostinger / إلخ)
 1. **تثبيت الحزم**:
    ```bash
    npm install
