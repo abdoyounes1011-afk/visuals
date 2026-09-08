@@ -1,8 +1,7 @@
-import express, { Request, Response } from "express";
+import express, { Request, Response, NextFunction } from "express";
 import path from "path";
 import dotenv from "dotenv";
 import { GoogleGenAI } from "@google/genai";
-import { createServer as createViteServer } from "vite";
 
 dotenv.config();
 
@@ -18,31 +17,22 @@ function getGenAI(): GoogleGenAI | null {
     return null;
   }
   try {
-    return new GoogleGenAI({
-      apiKey,
-      httpOptions: {
-        headers: {
-          "User-Agent": "aistudio-build",
-        },
-      },
-    });
+    return new GoogleGenAI({ apiKey });
   } catch (e) {
     console.warn("Failed to initialize GoogleGenAI:", e);
     return null;
   }
 }
 
-// Health check endpoint
-app.get("/api/health", (_req: Request, res: Response) => {
+// Health check endpoint (both /api/health and /health)
+app.get(["/api/health", "/health"], (_req: Request, res: Response) => {
   res.json({ status: "ok", timestamp: new Date().toISOString() });
 });
 
-// Official @google/genai candidate models prioritizing gemini-3.8-flash
+// Official @google/genai candidate models prioritizing fast responsive models
 const CANDIDATE_MODELS = [
-  "gemini-3.8-flash",
-  "gemini-flash-latest",
-  "gemini-3.1-flash-lite",
-  "gemini-3.1-pro-preview",
+  "gemini-2.5-flash",
+  "gemini-2.0-flash",
 ];
 
 async function generateGeminiContent(
@@ -50,30 +40,37 @@ async function generateGeminiContent(
   contents: any,
   config?: any
 ): Promise<string> {
+  const overallTimeoutMs = 5000; // 5s absolute total deadline so serverless requests never hit the 10s Vercel ceiling
   let lastError: any = null;
 
-  for (const model of CANDIDATE_MODELS) {
-    try {
-      const response = await aiClient.models.generateContent({
-        model,
-        contents,
-        config,
-      });
+  const runWithTimeout = async () => {
+    for (const model of CANDIDATE_MODELS) {
+      try {
+        const response = await aiClient.models.generateContent({
+          model,
+          contents,
+          config,
+        });
 
-      if (response && response.text) {
-        return response.text;
+        if (response && response.text) {
+          return response.text;
+        }
+      } catch (err: any) {
+        lastError = err;
+        console.warn(`Gemini attempt with "${model}" failed:`, err?.message || err);
       }
-    } catch (err: any) {
-      lastError = err;
-      const statusCode = err?.status || err?.code || err?.error?.code;
-      console.warn(
-        `Gemini model "${model}" returned ${statusCode || "error"}. Attempting candidate model fallback...`
-      );
-      await new Promise((resolve) => setTimeout(resolve, 200));
     }
-  }
+    throw lastError || new Error("All candidate models failed or timed out");
+  };
 
-  throw lastError;
+  const timeoutPromise = new Promise<never>((_, reject) =>
+    setTimeout(
+      () => reject(new Error(`Total deadline of ${overallTimeoutMs}ms exceeded for Gemini call`)),
+      overallTimeoutMs
+    )
+  );
+
+  return Promise.race([runWithTimeout(), timeoutPromise]);
 }
 
 function cleanJsonString(raw: string): string {
@@ -639,8 +636,8 @@ function getFallbackExamTraps(topic: string) {
   };
 }
 
-// 1. Endpoint: Zatona of Any Disease
-app.post("/api/zatona", async (req: Request, res: Response) => {
+// 1. Endpoint: Zatona of Any Disease (supports /api/zatona and /zatona)
+app.post(["/api/zatona", "/zatona"], async (req: Request, res: Response) => {
   try {
     const { diseaseName, notes } = req.body || {};
     const query = (diseaseName || notes || "").trim();
@@ -693,8 +690,8 @@ app.post("/api/zatona", async (req: Request, res: Response) => {
   }
 });
 
-// 2. Endpoint: Format into Handwritten Study Sheet Structure
-app.post("/api/handwritten-structure", async (req: Request, res: Response) => {
+// 2. Endpoint: Format into Handwritten Study Sheet Structure (supports /api/handwritten-structure and /handwritten-structure)
+app.post(["/api/handwritten-structure", "/handwritten-structure"], async (req: Request, res: Response) => {
   try {
     const { text, title } = req.body || {};
     if (!text && !title) {
@@ -809,8 +806,8 @@ Respond ONLY with valid JSON in this exact structure:
   }
 });
 
-// 3. Endpoint: Exam Traps & Clinical Pearls Analyzer
-app.post("/api/exam-traps", async (req: Request, res: Response) => {
+// 3. Endpoint: Exam Traps & Clinical Pearls Analyzer (supports /api/exam-traps and /exam-traps)
+app.post(["/api/exam-traps", "/exam-traps"], async (req: Request, res: Response) => {
   try {
     const { topic, notes } = req.body || {};
     const query = (topic || notes || "").trim();
@@ -868,8 +865,8 @@ Respond strictly in JSON format:
   }
 });
 
-// 4. Endpoint: Generate 3D Medical Illustration
-app.post("/api/generate-3d-illustration", async (req: Request, res: Response) => {
+// 4. Endpoint: Generate 3D Medical Illustration (supports /api/generate-3d-illustration and /generate-3d-illustration)
+app.post(["/api/generate-3d-illustration", "/generate-3d-illustration"], async (req: Request, res: Response) => {
   try {
     const { prompt, topic, sectionTitle } = req.body || {};
     const effectivePrompt = prompt || topic || sectionTitle || "Human eye cornea anatomy and chemical burn cross-section";
@@ -963,6 +960,7 @@ app.use((err: any, _req: Request, res: Response, _next: any) => {
 // Vite Middleware / Static Serving
 async function start() {
   if (process.env.NODE_ENV !== "production") {
+    const { createServer: createViteServer } = await import("vite");
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: "spa",
