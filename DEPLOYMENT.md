@@ -14,9 +14,25 @@
 
 ## 🛠️ خيارات النشر والتشغيل:
 
-### 1️⃣ التصدير والنشر المباشر من Google AI Studio (الأسهل)
-1. من أعلى واجهة Google AI Studio Build، اضغط على زر **Deploy** لاختيار النشر السريع على **Google Cloud Run**.
-2. أو اضغط على خيارات الإعدادات ثم **Export to ZIP** أو **Export to GitHub** لتنزيل كود المشروع كاملاً على جهازك.
+### 1️⃣ تصدير المشروع إلى مستودع جديد تماماً على GitHub (مثلاً باسم `v2`)
+مشروعك يظل باسمه الأصلي (**Fawzy AI**) دون أي تعديل على اسمه. لإنشاء ورفع الكود إلى ريبوزيتوري جديد مستقل تماماً على GitHub:
+
+- **الخيار الأول: عبر واجهة Google AI Studio مباشرة (نقرة واحدة)**:
+  1. من أعلى واجهة الموقع اضغط على قائمة الإعدادات (أيقونة الترس أو النقاط الثلاث) ثم اختر **Export to GitHub** (أو **Push to GitHub**).
+  2. ستفتح لك نافذة تسألك عن اسم المستودع (**Repository Name**).
+  3. اكتب في خانة الاسم: **`v2`** (أو اختر "Create new repository" وضع الاسم `v2`).
+  4. اختر نوع المستودع (Public أو Private) واضغط **Export / Push**.
+  5. سيقوم Google AI Studio فوراً بإنشاء مشروع ومستودع جديد تماماً باسم `v2` على حسابك في GitHub ورفع كل الملفات إليه دون المساس بأي مستودع سابق.
+
+- **الخيار الثاني: يدوياً عبر Git (إذا قمت بتنزيل ملف الـ ZIP)**:
+  ```bash
+  git init
+  git add .
+  git commit -m "Initial commit - Fawzy AI"
+  git branch -M main
+  git remote add origin https://github.com/<حسابك_في_GITHUB>/v2.git
+  git push -u origin main
+  ```
 
 ---
 
