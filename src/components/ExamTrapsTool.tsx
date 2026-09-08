@@ -3,6 +3,7 @@ import { AlertOctagon, Sparkles, Loader2, AlertTriangle, CheckCircle, ShieldAler
 import { HandwrittenCanvas } from "./HandwrittenCanvas";
 import { PdfDocumentViewer } from "./PdfDocumentViewer";
 import { ExamTrapsData, HandwrittenNoteData } from "../types";
+import { safeFetchJson } from "../lib/api";
 
 export const ExamTrapsTool: React.FC = () => {
   const [topic, setTopic] = useState("");
@@ -126,19 +127,18 @@ export const ExamTrapsTool: React.FC = () => {
     setLoading(true);
 
     try {
-      const res = await fetch("/api/exam-traps", {
+      const result = await safeFetchJson<{ success: boolean; data: ExamTrapsData }>("/api/exam-traps", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ topic: topic.trim() }),
       });
 
-      const json = await res.json();
-      if (!res.ok) {
-        throw new Error(json.error || "Failed to analyze exam traps.");
+      if (!result.ok || !result.data?.data) {
+        throw new Error(result.error || "Failed to analyze exam traps.");
       }
 
-      setTrapsData(json.data);
-      const hw = buildHandwrittenFromTraps(json.data);
+      setTrapsData(result.data.data);
+      const hw = buildHandwrittenFromTraps(result.data.data);
       setHandwrittenData(hw);
       // Default to PDF format with beige and highlighted keywords
       setViewMode("pdf");

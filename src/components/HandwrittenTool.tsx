@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { PenTool, Sparkles, Loader2, AlertCircle, FileEdit, CheckCircle2 } from "lucide-react";
 import { HandwrittenCanvas } from "./HandwrittenCanvas";
 import { HandwrittenNoteData } from "../types";
+import { safeFetchJson } from "../lib/api";
 
 const initialEyeBurnNote: HandwrittenNoteData = {
   title: "WHY IMMEDIATE EYE IRRIGATION IS CRUCIAL IN CHEMICAL BURNS?",
@@ -130,7 +131,7 @@ export const HandwrittenTool: React.FC = () => {
     setLoading(true);
 
     try {
-      const response = await fetch("/api/handwritten-structure", {
+      const result = await safeFetchJson<{ success: boolean; data: HandwrittenNoteData }>("/api/handwritten-structure", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -139,12 +140,11 @@ export const HandwrittenTool: React.FC = () => {
         }),
       });
 
-      const resJson = await response.json();
-      if (!response.ok) {
-        throw new Error(resJson.error || "Failed to structure handwritten note.");
+      if (!result.ok || !result.data?.data) {
+        throw new Error(result.error || "Failed to structure handwritten note.");
       }
 
-      setNoteData(resJson.data);
+      setNoteData(result.data.data);
     } catch (err: any) {
       console.error("Handwritten generation error:", err);
       setError(err.message || "Failed to generate note.");

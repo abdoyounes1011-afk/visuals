@@ -2,5 +2,7 @@
   "name": "Fawzy AI",
   "description": "Medical AI platform transforming clinical knowledge into handwritten study sheets, high-yield Zatona disease breakdowns, and exam trap analyzers.",
   "requestFramePermissions": [],
-  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
 }

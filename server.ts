@@ -11,13 +11,14 @@ const PORT = 3000;
 
 app.use(express.json({ limit: "10mb" }));
 
-// Initialize Gemini Client
-const apiKey = process.env.GEMINI_API_KEY;
-
-let ai: GoogleGenAI | null = null;
-try {
-  if (apiKey) {
-    ai = new GoogleGenAI({
+// Lazy initialization of Gemini Client
+function getGenAI(): GoogleGenAI | null {
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) {
+    return null;
+  }
+  try {
+    return new GoogleGenAI({
       apiKey,
       httpOptions: {
         headers: {
@@ -25,9 +26,10 @@ try {
         },
       },
     });
+  } catch (e) {
+    console.warn("Failed to initialize GoogleGenAI:", e);
+    return null;
   }
-} catch (e) {
-  console.warn("Failed to initialize GoogleGenAI:", e);
 }
 
 // Health check endpoint
@@ -35,15 +37,12 @@ app.get("/api/health", (_req: Request, res: Response) => {
   res.json({ status: "ok", timestamp: new Date().toISOString() });
 });
 
-// Candidate models prioritizing gemini-3.7-flash as requested
+// Official @google/genai candidate models prioritizing gemini-3.8-flash
 const CANDIDATE_MODELS = [
-  "gemini-3.7-flash",
-  "gemini-3.7-flash-preview",
-  "gemini-flash-latest",
   "gemini-3.8-flash",
-  "gemini-3-flash-preview",
-  "gemini-3.6-flash",
-  "gemini-3.1-flash-lite-preview",
+  "gemini-flash-latest",
+  "gemini-3.1-flash-lite",
+  "gemini-3.1-pro-preview",
 ];
 
 async function generateGeminiContent(
@@ -70,8 +69,7 @@ async function generateGeminiContent(
       console.warn(
         `Gemini model "${model}" returned ${statusCode || "error"}. Attempting candidate model fallback...`
       );
-      // Brief pause before trying alternative model to allow transient spikes to settle
-      await new Promise((resolve) => setTimeout(resolve, 350));
+      await new Promise((resolve) => setTimeout(resolve, 200));
     }
   }
 
@@ -644,13 +642,14 @@ function getFallbackExamTraps(topic: string) {
 // 1. Endpoint: Zatona of Any Disease
 app.post("/api/zatona", async (req: Request, res: Response) => {
   try {
-    const { diseaseName, notes } = req.body;
-    const query = diseaseName || notes || "";
+    const { diseaseName, notes } = req.body || {};
+    const query = (diseaseName || notes || "").trim();
 
     if (!query) {
       return res.status(400).json({ error: "Disease name or notes required" });
     }
 
+    const ai = getGenAI();
     if (ai) {
       try {
         const text = await generateGeminiContent(
@@ -662,7 +661,7 @@ app.post("/api/zatona", async (req: Request, res: Response) => {
           }
         );
 
-        if (text) {
+        if (text && text.trim().length > 0) {
           return res.json({
             success: true,
             title: diseaseName || "Clinical Disease Zatona",
@@ -670,11 +669,11 @@ app.post("/api/zatona", async (req: Request, res: Response) => {
           });
         }
       } catch (geminiError: any) {
-        console.warn("All candidate Gemini models failed or experienced demand spikes. Transitioning to clinical engine:", geminiError?.message || geminiError);
+        console.warn("Gemini model call failed. Transitioning to clinical engine:", geminiError?.message || geminiError);
       }
     }
 
-    // Fallback if AI call didn't succeed
+    // Fallback if AI call didn't succeed - always returns valid clinical content
     const fallbackText = getFallbackZatona(diseaseName, notes);
     return res.json({
       success: true,
@@ -684,18 +683,25 @@ app.post("/api/zatona", async (req: Request, res: Response) => {
     });
   } catch (error: any) {
     console.error("Zatona endpoint error:", error);
-    res.status(500).json({ error: error.message || "Failed to generate Zatona" });
+    const fallbackText = getFallbackZatona(req.body?.diseaseName, req.body?.notes);
+    return res.json({
+      success: true,
+      title: req.body?.diseaseName || "Clinical Disease Zatona",
+      content: fallbackText,
+      isFallback: true,
+    });
   }
 });
 
 // 2. Endpoint: Format into Handwritten Study Sheet Structure
 app.post("/api/handwritten-structure", async (req: Request, res: Response) => {
   try {
-    const { text, title } = req.body;
+    const { text, title } = req.body || {};
     if (!text && !title) {
       return res.status(400).json({ error: "Content is required" });
     }
 
+    const ai = getGenAI();
     if (ai) {
       try {
         const prompt = `You are an elite medical educator creating a high-yield medical study sheet infographic in the style of clinical sketch infographics on lined notebook paper.
@@ -784,7 +790,9 @@ Respond ONLY with valid JSON in this exact structure:
 
         if (rawText) {
           const parsed = JSON.parse(cleanJsonString(rawText));
-          return res.json({ success: true, data: parsed });
+          if (parsed && Array.isArray(parsed.sections) && parsed.sections.length > 0) {
+            return res.json({ success: true, data: parsed });
+          }
         }
       } catch (err: any) {
         console.warn("Handwritten structure generation fallback:", err?.message || err);
@@ -796,20 +804,22 @@ Respond ONLY with valid JSON in this exact structure:
     return res.json({ success: true, data: fallbackData, isFallback: true });
   } catch (error: any) {
     console.error("Handwritten structure error:", error);
-    res.status(500).json({ error: error.message || "Failed to structure handwritten note" });
+    const fallbackData = getFallbackHandwrittenStructure(req.body?.text || "", req.body?.title || "");
+    return res.json({ success: true, data: fallbackData, isFallback: true });
   }
 });
 
 // 3. Endpoint: Exam Traps & Clinical Pearls Analyzer
 app.post("/api/exam-traps", async (req: Request, res: Response) => {
   try {
-    const { topic, notes } = req.body;
-    const query = topic || notes || "";
+    const { topic, notes } = req.body || {};
+    const query = (topic || notes || "").trim();
 
     if (!query) {
       return res.status(400).json({ error: "Topic or clinical notes required" });
     }
 
+    const ai = getGenAI();
     if (ai) {
       try {
         const prompt = `You are a Senior Medical Exam Board Question Writer (USMLE / PLAB / Clinical Boards).
@@ -839,7 +849,9 @@ Respond strictly in JSON format:
 
         if (rawText) {
           const parsed = JSON.parse(cleanJsonString(rawText));
-          return res.json({ success: true, data: parsed });
+          if (parsed && Array.isArray(parsed.traps) && parsed.traps.length > 0) {
+            return res.json({ success: true, data: parsed });
+          }
         }
       } catch (err: any) {
         console.warn("Exam traps generation fallback:", err?.message || err);
@@ -851,30 +863,32 @@ Respond strictly in JSON format:
     return res.json({ success: true, data: fallbackTraps, isFallback: true });
   } catch (error: any) {
     console.error("Exam traps endpoint error:", error);
-    res.status(500).json({ error: error.message || "Failed to analyze exam traps" });
+    const fallbackTraps = getFallbackExamTraps(req.body?.topic || req.body?.notes || "");
+    return res.json({ success: true, data: fallbackTraps, isFallback: true });
   }
 });
 
-// 4. Endpoint: Generate 3D Medical Illustration using Nano Banana Pro (gemini-3-pro-image)
+// 4. Endpoint: Generate 3D Medical Illustration
 app.post("/api/generate-3d-illustration", async (req: Request, res: Response) => {
   try {
-    const { prompt, topic, sectionTitle } = req.body;
+    const { prompt, topic, sectionTitle } = req.body || {};
     const effectivePrompt = prompt || topic || sectionTitle || "Human eye cornea anatomy and chemical burn cross-section";
 
+    const ai = getGenAI();
     if (!ai) {
-      return res.status(503).json({
-        error: "Gemini client not initialized. Please ensure GEMINI_API_KEY is configured.",
+      return res.status(200).json({
+        success: false,
+        error: "توليد المجسمات الطبية ثلاثية الأبعاد يتطلب مفتاح GEMINI_API_KEY. تم تفعيل المخطط التوضيحي عالي الدقة بدلاً منه.",
+        requiresPaidKey: true,
       });
     }
 
     const detailed3DPrompt = `3D photorealistic medical illustration of: ${effectivePrompt}. Hyper-detailed medical textbook CGI render, clear anatomical layers, 3D volumetric depth with soft ambient occlusion, translucent corneal stroma, glossy surface reflections, clean studio medical lighting, isolated on clean neutral white background, educational textbook standard.`;
 
-    // Attempt generation with Nano Banana Pro (gemini-3-pro-image)
-    // with graceful fallback to gemini-3.1-flash-image and gemini-3.1-flash-lite-image
     const imageCandidateModels = [
-      "gemini-3-pro-image",
       "gemini-3.1-flash-image",
       "gemini-3.1-flash-lite-image",
+      "gemini-3-pro-image",
     ];
 
     let lastError: any = null;
@@ -920,14 +934,29 @@ app.post("/api/generate-3d-illustration", async (req: Request, res: Response) =>
       }
     }
 
-    // If quota or paid key is needed
-    return res.status(402).json({
-      error: lastError?.message || "Generation requires paid tier for gemini-3-pro-image (Nano Banana Pro).",
+    // Always return JSON, never plain HTML 402/500
+    return res.status(200).json({
+      success: false,
+      error: lastError?.message || "يتطلب توليد الصور 3D مفتاحاً مفعلاً لنماذج الصور.",
       requiresPaidKey: true,
     });
   } catch (error: any) {
     console.error("3D illustration generation error:", error);
-    res.status(500).json({ error: error.message || "Failed to generate 3D illustration" });
+    return res.status(200).json({
+      success: false,
+      error: error.message || "Failed to generate 3D illustration",
+    });
+  }
+});
+
+// Global JSON error handler middleware to prevent ANY HTML 500 error response
+app.use((err: any, _req: Request, res: Response, _next: any) => {
+  console.error("Unhandled Express error:", err);
+  if (!res.headersSent) {
+    res.status(200).json({
+      success: false,
+      error: err?.message || "حدث خطأ غير متوقع في معالجة الطلب، يرجى المحاولة مرة أخرى.",
+    });
   }
 });
 

@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { Download, Copy, Check, Sparkles, ZoomIn, ZoomOut, Palette, RefreshCw, Box, Layers, Image as ImageIcon, Loader2, AlertTriangle, ShieldCheck } from "lucide-react";
 import confetti from "canvas-confetti";
 import { HandwrittenNoteData } from "../types";
+import { safeFetchJson } from "../lib/api";
 
 interface HandwrittenCanvasProps {
   data: HandwrittenNoteData;
@@ -1517,7 +1518,13 @@ export const HandwrittenCanvas: React.FC<HandwrittenCanvasProps> = ({ data, onRe
     setStatusMessage({ text: "جاري استدعاء نموذج Nano Banana Pro (Gemini 3 Pro Image) لتوليد المجسم الطبي 3D..." });
 
     try {
-      const res = await fetch("/api/generate-3d-illustration", {
+      const result = await safeFetchJson<{
+        success: boolean;
+        imageUrl?: string;
+        modelUsed?: string;
+        requiresPaidKey?: boolean;
+        error?: string;
+      }>("/api/generate-3d-illustration", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -1527,31 +1534,30 @@ export const HandwrittenCanvas: React.FC<HandwrittenCanvasProps> = ({ data, onRe
         }),
       });
 
-      const resJson = await res.json();
-      if (!res.ok) {
-        if (resJson.requiresPaidKey) {
+      if (!result.ok || !result.data?.success) {
+        if (result.data?.requiresPaidKey) {
           setStatusMessage({
-            text: "يتطلب نموذج Nano Banana Pro (Gemini 3 Pro Image) تفعيل فوترة API مدفوعة. تم تفعيل المحرك التجسيمي 3D المدمج تلقائياً في الصورة بأعلى دقة!",
+            text: "يتطلب نموذج الصور السحابي مفتاح API مفعل؛ تم تفعيل المخطط التوضيحي عالي الدقة المدمج في المذكرة تلقائياً!",
             isError: true,
           });
         } else {
-          throw new Error(resJson.error || "فشل في توليد الصورة ثلاثية الأبعاد");
+          throw new Error(result.error || "فشل في توليد الصورة ثلاثية الأبعاد");
         }
         return;
       }
 
-      if (resJson.imageUrl) {
+      if (result.data.imageUrl) {
         const img = new Image();
         img.crossOrigin = "anonymous";
         img.onload = () => {
-          customImagesRef.current.set(resJson.imageUrl, img);
-          setSection3dImages((prev) => ({ ...prev, [sectionIdx]: resJson.imageUrl }));
+          customImagesRef.current.set(result.data!.imageUrl!, img);
+          setSection3dImages((prev) => ({ ...prev, [sectionIdx]: result.data!.imageUrl! }));
           setStatusMessage({
-            text: `تم توليد ودمج المجسم الطبي 3D بنجاح بواسطة ${resJson.modelUsed || "Nano Banana Pro"}!`,
+            text: `تم توليد ودمج المجسم الطبي 3D بنجاح بواسطة ${result.data?.modelUsed || "الذكاء الاصطناعي"}!`,
           });
           confetti({ particleCount: 35, spread: 65, origin: { y: 0.7 } });
         };
-        img.src = resJson.imageUrl;
+        img.src = result.data.imageUrl;
       }
     } catch (err: any) {
       console.error("3D generation error:", err);

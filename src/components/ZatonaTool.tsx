@@ -3,6 +3,7 @@ import { Sparkles, FileText, Image as ImageIcon, ArrowRight, AlertTriangle, Chec
 import { HandwrittenCanvas } from "./HandwrittenCanvas";
 import { PdfDocumentViewer } from "./PdfDocumentViewer";
 import { HandwrittenNoteData } from "../types";
+import { safeFetchJson } from "../lib/api";
 
 interface ZatonaToolProps {
   onClose?: () => void;
@@ -185,7 +186,7 @@ export const ZatonaTool: React.FC<ZatonaToolProps> = () => {
     setLoading(true);
 
     try {
-      const response = await fetch("/api/zatona", {
+      const result = await safeFetchJson<{ success: boolean; content: string; title?: string }>("/api/zatona", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -194,13 +195,12 @@ export const ZatonaTool: React.FC<ZatonaToolProps> = () => {
         }),
       });
 
-      const data = await response.json();
-      if (!response.ok) {
-        throw new Error(data.error || "Failed to generate clinical Zatona");
+      if (!result.ok || !result.data?.content) {
+        throw new Error(result.error || "Failed to generate clinical Zatona");
       }
 
-      setZatonaResult(data.content);
-      const structured = buildNoteDataFromZatona(diseaseName || "Clinical Zatona", data.content);
+      setZatonaResult(result.data.content);
+      const structured = buildNoteDataFromZatona(diseaseName || "Clinical Zatona", result.data.content);
       setHandwrittenData(structured);
 
       // Default to PDF format with beige & highlighted keywords as requested by the user
